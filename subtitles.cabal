@@ -1,4 +1,4 @@
-Name:             Subtitles
+Name:             subtitles
 Version:          0.0.1
 Description:      Simple program to cut, select prefix/suffix of, reindex and shift SRT subtitle files.
 Synopsis:         Modify SRT subtitle files.
