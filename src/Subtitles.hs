@@ -146,8 +146,8 @@ main = do
       putStrLn "subtitles show    <srt>"
       putStrLn "subtitles shift   <srt> <milliseconds> [<seconds> [<minutes> [<hours>]]]"
       putStrLn "subtitles reindex <srt>"
-      putStrLn "subtitles prefix  <srt> <seconds> [<minutes> [<hours>]]"
-      putStrLn "subtitles suffix  <srt> <seconds> [<minutes> [<hours>]]"
+      putStrLn "subtitles prefix  <srt> <milliseconds> [<seconds> [<minutes> [<hours>]]]"
+      putStrLn "subtitles suffix  <srt> <milliseconds> [<seconds> [<minutes> [<hours>]]]"
   where
     with f srt = readFile srt >>= mapM_ print . f . parse
 
@@ -157,13 +157,15 @@ main = do
     shift' [l, s, m, h] = shift (Duration (read l) (read s) (read m) (read h))
     shift' _            = error "shift: too many arguments"
 
-    prefix' [s]          = prefix (Duration 0 (read s) 0        0)
-    prefix' [s, m]       = prefix (Duration 0 (read s) (read m) 0)
-    prefix' [s, m, h]    = prefix (Duration 0 (read s) (read m) (read h))
+    prefix' [l]          = prefix (Duration (read l) 0        0        0)
+    prefix' [l, s]       = prefix (Duration (read l) (read s) 0        0)
+    prefix' [l, s, m]    = prefix (Duration (read l) (read s) (read m) 0)
+    prefix' [l, s, m, h] = prefix (Duration (read l) (read s) (read m) (read h))
     prefix' _            = error "prefix: too many arguments"
 
-    suffix' [s]          = suffix (Duration 0 (read s) 0        0)
-    suffix' [s, m]       = suffix (Duration 0 (read s) (read m) 0)
-    suffix' [s, m, h]    = suffix (Duration 0 (read s) (read m) (read h))
+    suffix' [l]          = suffix (Duration (read l) 0        0        0)
+    suffix' [l, s]       = suffix (Duration (read l) (read s) 0        0)
+    suffix' [l, s, m]    = suffix (Duration (read l) (read s) (read m) 0)
+    suffix' [l, s, m, h] = suffix (Duration (read l) (read s) (read m) (read h))
     suffix' _            = error "suffix: too many arguments"
 
