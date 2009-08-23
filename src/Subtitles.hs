@@ -11,10 +11,10 @@ import System.Environment
 -- Subtitle data type.
 
 data Time = Time
-  { hour    :: Int
-  , minutes :: Int
-  , seconds :: Int
-  , frame   :: Int
+  { hours        :: Int
+  , minutes      :: Int
+  , seconds      :: Int
+  , milliseconds :: Int
   } deriving (Eq, Ord)
 
 data Range = Range 
@@ -30,10 +30,25 @@ data Line = Line
 
 type Subtitles = [Line]
 
+-- Duration of a shift or prefix/suffix
+
+data Duration = Duration
+  { dMilliseconds :: Int
+  , dMinutes      :: Int
+  , dSeconds      :: Int
+  , dHours        :: Int
+  } deriving (Eq, Ord)
+
 -- Showing subtilte lines.
 
 instance Show Time where
-  show (Time h m s f) = concat [show h, ":", show m, ":", show s, ",", show f]
+  show (Time h m s l) = concat [f h, ":", f m, ":", f s, ",", g l]
+    where
+      f x | x < 10    = "0" ++ show x
+          | otherwise = show x
+      g x | x < 10    = "00" ++ show x
+          | x < 100   = "0" ++ show x
+          | otherwise = show x
 
 instance Show Range where
   show (Range f t) = concat [show f, " --> ", show t]
@@ -68,40 +83,41 @@ parseTime :: String -> Maybe Time
 parseTime t =
   let xs =  fmap read . splitWhen (not . isDigit) $ trim t in
   case xs of
-    [a, b, c, d] -> Just (Time a b c d)
+    [h, m, s, l] -> Just (Time h m s l)
     _            -> Nothing
 
 -- Shifting time ranges.
 
-shift :: Int -> Int -> Int -> Subtitles -> Subtitles
-shift h m s = map (shiftLine h m s)
+shift :: Duration -> Subtitles -> Subtitles
+shift d = map (shiftLine d)
 
-shiftLine :: Int -> Int -> Int -> Line -> Line
-shiftLine h m s (Line i t w) = Line i (shiftRange h m s t) w
+shiftLine :: Duration -> Line -> Line
+shiftLine d (Line i t w) = Line i (shiftRange d t) w
 
-shiftRange :: Int -> Int -> Int -> Range -> Range
-shiftRange h m s (Range f t) = Range (shiftTime h m s f) (shiftTime h m s t)
+shiftRange :: Duration -> Range -> Range
+shiftRange d (Range f t) = Range (shiftTime d f) (shiftTime d t)
 
-shiftTime :: Int -> Int -> Int -> Time -> Time
-shiftTime h m s (Time th tm ts tf) = 
-  let se = (ts + s)
-      mi = (tm + m + se `div` 60)
-      ho = (th + h + mi `div` 60)
-  in Time ho (mi `mod` 60) (se `mod` 60) tf
+shiftTime :: Duration -> Time -> Time
+shiftTime (Duration dl ds dm dh) (Time th tm ts tl) = 
+  let li = (tl + dl)
+      se = (ts + ds + li `div` 1000)
+      mi = (tm + dm + se `div` 60)
+      ho = (th + dh + mi `div` 60)
+  in Time ho (mi `mod` 60) (se `mod` 60) (li `mod` 1000)
 
 reindex :: Subtitles -> Subtitles
 reindex s = zipWith f s [1..]
   where f (Line _ t w) i = Line i t w
 
-prefix :: Int -> Int -> Int -> Subtitles -> Subtitles
-prefix h m s =
-  filter ((== GT) . compare (Time h m s 0) . (from . time))
+prefix :: Duration -> Subtitles -> Subtitles
+prefix (Duration l s m h) =
+  filter ((== GT) . compare (Time h m s l) . (from . time))
 
-suffix :: Int -> Int -> Int -> Subtitles -> Subtitles
-suffix h m s =
-    shift (-h) (-m) (-s)
+suffix :: Duration -> Subtitles -> Subtitles
+suffix (Duration l s m h) =
+    shift (Duration (-l) (-s) (-m) (-h))
   . reindex
-  . filter ((/= GT) . compare (Time h m s 0) . (from . time))
+  . filter ((/= GT) . compare (Time h m s l) . (from . time))
 
 -- Helper functions.
 
@@ -117,23 +133,37 @@ trim = withBoth (dropWhile isSpace)
 -- Main function.
 
 main :: IO ()
-main =
-  do args <- getArgs
-     case args of
+main = do
+  args <- getArgs
+  case args of
+    ["show",    srt]          -> with id               srt
+    ("shift" :  srt : x : xs) -> with (shift' (x:xs))  srt
+    ["reindex", srt]          -> with reindex          srt
+    ("prefix" : srt : x : xs) -> with (prefix' (x:xs)) srt
+    ("suffix" : srt : x : xs) -> with (suffix' (x:xs)) srt
+    _                         -> do
+      putStrLn "USAGE:"
+      putStrLn "subtitles show    <srt>"
+      putStrLn "subtitles shift   <srt> <milliseconds> [<seconds> [<minutes> [<hours>]]]"
+      putStrLn "subtitles reindex <srt>"
+      putStrLn "subtitles prefix  <srt> <seconds> [<minutes> [<hours>]]"
+      putStrLn "subtitles suffix  <srt> <seconds> [<minutes> [<hours>]]"
+  where
+    with f srt = readFile srt >>= mapM_ print . f . parse
 
-       ["show",    srt]          -> with id                                  srt
-       ["shift",   srt, h, m, s] -> with (shift (read h) (read m) (read s))  srt
-       ["reindex", srt]          -> with reindex                             srt
-       ["prefix",  srt, h, m, s] -> with (prefix (read h) (read m) (read s)) srt
-       ["suffix",  srt, h, m, s] -> with (suffix (read h) (read m) (read s)) srt
+    shift' [l]          = shift (Duration (read l) 0        0        0)
+    shift' [l, s]       = shift (Duration (read l) (read s) 0        0)
+    shift' [l, s, m]    = shift (Duration (read l) (read s) (read m) 0)
+    shift' [l, s, m, h] = shift (Duration (read l) (read s) (read m) (read h))
+    shift' _            = error "shift: too many arguments"
 
-       _ -> 
-         do putStrLn "ERROR invalid arguments. Try one of the following:"
-            putStrLn "  subtitles show <srt>"
-            putStrLn "  subtitles shift <srt> <hour> <minutes> <seconds>"
-            putStrLn "  subtitles reindex <srt>"
-            putStrLn "  subtitles prefix <srt> <hour> <minutes> <seconds>"
-            putStrLn "  subtitles suffix <srt> <hour> <minutes> <seconds>"
+    prefix' [s]          = prefix (Duration 0 (read s) 0        0)
+    prefix' [s, m]       = prefix (Duration 0 (read s) (read m) 0)
+    prefix' [s, m, h]    = prefix (Duration 0 (read s) (read m) (read h))
+    prefix' _            = error "prefix: too many arguments"
 
-  where with f srt = readFile srt >>= mapM_ print . f . parse
+    suffix' [s]          = suffix (Duration 0 (read s) 0        0)
+    suffix' [s, m]       = suffix (Duration 0 (read s) (read m) 0)
+    suffix' [s, m, h]    = suffix (Duration 0 (read s) (read m) (read h))
+    suffix' _            = error "suffix: too many arguments"
 
